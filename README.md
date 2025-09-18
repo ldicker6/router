@@ -1,58 +1,78 @@
-# README for Assignment 2: Router
+# Software Router (C)
 
-Name: Lilah Dicker
+A user-space software router implemented in C. It parses Ethernet frames, handles ARP, forwards IPv4 packets with longest-prefix match, and generates required ICMP messages (echo reply, time exceeded, destination/port unreachable). Built as part of a computer networks course, presented here as a standalone, runnable project.
 
-JHED: Ldicker6
+## ✨ Features
+- **Ethernet → ARP/IP demux** with header parsing/validation
+- **ARP cache & request queue** (timeouts, retries; queue drain on reply)
+- **IPv4 forwarding** with **longest-prefix match (LPM)** and TTL/checksum updates
+- **ICMP**: echo reply, time exceeded (TTL=0), dest net/host unreachable, port unreachable
+- **Robust error handling** and packet utilities
+
+## 🔧 Tech & Skills
+C (GCC), Linux networking, packet parsing, routing algorithms, debugging (tcpdump/Wireshark), build systems (Make).
+
+## 📁 Project Layout
+.
+├── Makefile
+├── rtable # example static routing table
+├── sr_router.c/.h # core router logic, packet entry point
+├── sr_arpcache.c/.h # ARP cache & request queue
+├── sr_if.c/.h # interface utilities
+├── sr_rt.c/.h # routing table helpers
+├── sr_utils.c/.h # checksum, dump helpers
+├── sr_main.c # process setup / main loop
+├── sr_protocol.h # on-wire structs (Ethernet/IP/ARP/ICMP)
+├── sha1.c/.h, vnscommand.h
+└── docs/
+└── IMPLEMENTATION.md # full design notes & decisions
+
+--- 
+
+## ▶️ Build
+Tested on Ubuntu.
+```bash
+sudo apt-get update && sudo apt-get install -y build-essential
+make clean && make
+```
+
+## Quick Functional Checks
+
+Ping the router interface → ICMP echo reply:
+```bash
+$ ping <router-if-ip>
+```
+
+Ping across subnets → triggers ARP resolution + forwarding:
+```bash
+$ ping <host-in-other-subnet>
+```
+
+Traceroute → observe ICMP Time Exceeded at decreasing TTL:
+```bash
+$ traceroute <remote-host>
+```
+
+- No route → ICMP Dest Net Unreachable (Type 3, Code 0)
+- ARP exhaust (5 retries) → ICMP Dest Host Unreachable (Type 3, Code 1)
+- UDP to router (non-ICMP) → ICMP Port Unreachable (Type 3, Code 3)
+---
+
+## Design Overview
+
+- Packet entry: sr_handlepacket() splits ARP vs IP.
+- IP handling (handle_ip_packet): checksum verify → local vs forward → TTL/cksum update → LPM → send or ARP queue.
+- ARP handling (handle_arp_packet): reply when requested; on reply, insert into cache and flush queued packets.
+- ARP retries: arpcache_sweepreqs() + handle_arpreq() manage timeouts and eventual host-unreachable ICMP.
+- ICMP helpers: icmp_echo_reply(...) and send_icmp_error(type, code, ...) centralize construction & checksums.
+
+For the full deep-dive (files modified, helpers, debugging notes, design decisions), see docs/IMPLEMENTATION.md
 
 ---
 
-**DESCRIBE YOUR CODE AND DESIGN DECISIONS HERE**
+### Future Improvements
 
-This will be worth 10% of the assignment grade.
-
-Some guiding questions:
-- What files did you modify (and why)?
-- What helper method did you write (and why)?
-- What logic did you implement in each file/method?
-- What problems or challenges did you encounter?
-
-In this project I implemented a simple router (with a static routing table). It receives raw ethernet frames and it processes packets like a real router, routing/forwarding packets to the correct interfaces when necessary. I will go over the logic behind my implementation, and the processes I went through when facing certain issues/topics in order to get my code working as you see it, in this writeup. 
-To begin, I’ll talk about how I started this assignment. I set it up per the README instructions, and decided to begin coding the project as detailed in the recommended course of action in the class a2 tutorial lecture.
-So, in terms of writing code, I started with the packet entry point, in router.c, function sr_handlepacket(). At this point I was still understanding the inner workings of my router, so after implementing the simple split within this function, i created the helper functions to handle the ip packets and arp packets, and began testing to make sure this split was working correctly on the different packets. This distinct implementation helps with debugging issues that rely on incorrect classification between ip/arp packets, which I encountered a bit, but very briefly, in the beginning of my coding process. 
-IP:
-I then continued with implementing handle_ip_packet(), a helper function I created that was called within handle packet. I start by parsing the packet, and extracting the ethernet and ip header. Then I validate the checksum, by ip standards, dropping it if the checksum doesn’t match. Then I check if the packet is meant for the current router by seeing if the destination IP of the packet matches any of the current router’s interfaces. This step determines the next logical path– whether we should process the packet or forward it somewhere else. Then there are a few paths that can be taken, if the packet is for the router i respond accordingly. Throughout my debugging processes i noticed my router got itself into some sort of loop at times, so I added in checks in my implementation to make sure that my router isn't going into a loop of its own packets, which is seen in my code by the dropping of a packet when commented that its a loop check .  Once confirmed that the packet was destined for the router, I checked whether it was an icmp echo request (Type 8). If so, I responded with an Echo Reply using my icmp_echo_reply helper function. If its not an echo request we send port unreachable. I implemented a helper function for all of the icmp messages that relay an error for debugging purposes. This logic allowed me to distinguish the different types of icmp packets I was sending when running my test cases, in a more explicit way. I named this function send_icmp_error, whereas the icmp echo replies otherwise were sent by my helper function icmp_echo_reply. I will explain my implementation of these functions more in depth later on in this writeup. 
-If the packet wasn’t for the current router, i began the forwarding process by first decrementing the TTL and then checking if we need to reply with icmp time exceeded, this is done per ip protocol, and done earlier for efficiency. Then after the ttl is decremented recompute the checksum, and then find the longest prefix match in order to continue forwarding. I implemented a helper function called find_longest_prefix_match to help with this process. 
-	Regarding my longest prefix match function, i made this a helper function for ease in finding the next best hop for the destination ip in question. To determine the longest prefix, i continued by finding the route whose subnet mask matches the destination ip (with the longest prefix), so, in my implementation i coded it as the most specific one that matches. I did this by comparing the destination ip to each route in the routing table by applying the subnet mask to both of the route destinations ip and the packets destination ip and then if they matched i kept track of that, but overall i kept track of the match that also involved the longest mask, meaning it was the most specific and thus was the the best match. 
-Then, there were two cases, if there is no route found by this function, that means that icmp network is unreachable, therefore we send icmp error (with my helper function) with type 3 code 0 per the assignment instructions, as destination network unreachable. However if the route does exist and is found by the previous step, then we either forward to the gateway, or directly to the destination ip, depending on the route. To do this, we have to check if the mac address for the next hop is already cached in the arp table, by calling sr_arpcache_lookup, which will return a pointer to that cache entry if it exists in the cache already. and if it returns something to us thats not null, then we can just send the packet right away using the destination mac address we now have. If not we have to trigger arp resolution. These two cases are implemented as follows:
-	If the mac address is known we send it immediately using sr_send_packet. I do this by first setting up the source mac, destination mac, and then send the packet to the proper interface. (making sure we free everything malloc’d). Per the instructions. If the Mac address is not known, we have to queue the packet and trigger arp. We do this by calling sr_arpcache_queuereq.  What happens here is that the packet is copied, then added to the request queue, then triggers an arp request. I implemented this tep because we need to resolve the mad address to build the ethernet frame in order to forward this packet. If, after 5 tries theres no response from the arp requests, then we send icmp host unreachable . 
-Now to further explain the handling of icmp packets ill explain how i implemented the helper functions mentioned above, starting with send_icmp_error. The purpose of this function was to build and send any icmp error packet (that usually arose from some problem when processing the incoming ip packet). It handles the 4 cases test, ttl expiration, net unreachable, host unreachable, and port unreachable. I started by parsing the headers from the packet that triggered this function, so im able to construct the icmp reply accordingly, we also have to send it back to the proper interface, using the current interface as the source. Then i malloc the space to construct the packet, build the ethernet header, build the ip header (quite manually, line by line, for clarification), build the icmp error header per the instructions, construct checksums, and send the packet (freeing everything mallocd befor ending this function). 
-In my implementation of icmp_echo_reply, i handled icmp echo requests (type 8) by replying with an icmp echo reply using this function. Starting by allocating the space, including the same payload as the incoming packet, changing the source and destination, changing the code/type, recomputing the checksum, then, finding the route it needs to take back by using the helper function i created find_longest_prefix_match, we are able to send the packet back out (afterwards, i free what was malloc’d). 
-
-
-ARP:
-I created a function called handle_arp_packet as well, to handle arp packets, with clarity. I will now explain how i implemented this function, separate helper functions, and how it is used within my entire router. 
-
-I start off similarly to my ip handler, parsing the packet, verifying that its addressed to this router, then continuing as follows. If its a request, then i send the arp reply, by building it as explained in the packet creation document, making the source the current routers mac and the destination the original senders mac, and sending it using sr_send_packet, freeing all that was malloc’d. If it’s an ARP reply, however, we have to then insert it into the cache, and process the queue, using my other implemented functions. So, I call sr_arpcache_insert, accordingly, check if any packets are waiting on this mac specifically. I then iterated through the queued packets, filled in the destination MAC using the newly learned address, and forwarded each packet via sr_send_packet(). Now we can remove the arp request entry from the queue because we resolved the mac address that its purpose was in the first place, all of the queued packets for it were sent. 
-
-Now, moving onto the explanations of how i implemented the functions in the arpcache.c file, i will begin with my handle_arpreq function. 
-
-This function is to handle the retrying of arp requests, and then sending icmp host unreachable messages if we can’t resolve the mac. I begin by pacing it, checking the time since the last one has been sent, and checking if i’ve already sent 5 requests, in this case, per the instructions, if its been 5 retries, i send icmp host unreachable using my helper function, then remove the request from the queue. If it hasn’t been 5 tries yet then i just resend the request. This is the function that helps so unresolved packets aren’t sitting in the queue indefinitely. 
-
-I also implemented arpcache_sweepreqs, it acts as a repetitive check for all arp requests. It basically runs a sweep through the list of unresolved arp requests, as the name provided implies. It starts at the beginning of the list, and goes through every request in a while loop, handling each request using the other function handle_arpreq. So they go hand in hand, because this goes through the list of requests, and then delegates the work of handling them to handle_arpreq. 
-
-I’ll now explain to you my debugging process that led me to implement the functions the way i did.I ran through all of the test cases, and slowly started to add print statements within my code, to ensure that even if i was getting the correct output in my mininet, or even my router, that my router was taking the correct steps to get there. I started by running a ping to the router’s interface to test basic echo handling at first, because my first helper function was to take care of basic echo handling, reply of type 0. I added print statements in my router code, and saw in my router statements like:
-IP - Entered handle_ip_packet()
-Icmp -  Echo Request sending reply
-ICMP - Sent reply from interface [] 
-Which ensured that the icmp echo request came in correctly, my router then called imcp_echo_reply, which was constructed and sent back correctly, from the correct interface (mac/ip headers were reversed). I then began to test pings to another subnet, which I noticed, showed some packet loss in the beginning. Then, i tried again, and got no packet loss. I added print statements at every function , and multiple within every helper function to ensure that the mac was not in the cache, queuing and triggering arp, sending the packet out, receiving the proper arp reply inserting it into the ache, and sending queued packets. So, when i realized my logic was all correct, i realized the behavior mightve been explained by the fact that the first pings lost were likely arriving before the router had the mac  so they probably timed out. Upon my retest immediately after, when the arp was cached, all packets were forwarded immediately. I began to test traceroute as well. I began to test sending an icmp time exceeded, when i tried this test initially it seemed that i wasn’t getting what i wanted to see. The first hops showed ***, even though it eventually reached the server. I began to question if my router wasn’t responding with icmp time exceeded een when ttl hits zero, so i began debugging my send_icmp_error function, and where it was called. I realized the icmp error wasn’t being generated correctly. Upon fixing my logic to what you see it as now, and making some slight changes, adding print statements, i got the icmp logic to print out that it was generating type 11 code 0, and then by re-running this, i saw the traceroute produce the right hop responses as expected by the instructions, and solution code. 
-
-I began to attemp testing for an icmp destination net unreachable. As expected, my router attempted to perform a longest prefix match, found no suitable route, and responded with an ICMP Destination Net Unreachable message (Type 3, Code 0). The client correctly displayed “Destination Net Unreachable,” and my router logs confirmed that the ICMP error was generated and sent from the appropriate interface. This test demonstrated that both my routing table lookup logic and ICMP error handling were functioning as intended. When attempting to test destination host unreachable, i ran into some issues. What confused me at first, was that my mininet was still printing net unreachable. I thought there mightve been an issue with my testing process, or my icmp. Looking closely at my icmp functions and router print statements, I came to the conclusion that when arp was retried 5 times,my router will indeed send icmp_error with type 3 and code 1, and the logic was correct in my code. Although Mininet didn’t explicitly print ‘Host Unreachable’ in the terminal, I confirmed correct router behavior using debug output, which showed five ARP attempts followed by an ICMP Type 3 Code 1 (host unreachable) message sent to the client.
-
-
-Similarly, it ws relatively easy to ensure that a packet that was meant for the current router, but was something like UDP instead of an imcp echo request, would be returned as an ICMP port unreachable, as it occurred fairly early in the routing process, and was handled by my helper function which had excessive print statements already. 
-
-Testing the HTTP part was fairly simple as well, since everything else in my testing and debugging process was very comprehensive, the http tests passed as expected. 
-
-One issue in my debugging process I noticed, that I wasn’t sure of was normal behavior, was the tendency to sometimes run indefinitely. To account for this, i went down multiple debugging paths in this journey, and added some checks within my code, that you will likely see, to just sanity check the patht htat the packet is taking. If a router received a packet from itself, or for some reason, forwarded a packet back to itself i addressed this by checking for these cases, i handled them accordingly. I didn’t have them originally, but during the debugging process, I was worried that some issues might’ve been because i was lacking these checks, and then as I continued my debugging, i kept them in. and now that my code is working, whether they were explciplty solving the issues at the time or not, i think they are helpful to keep in. 
-
-# router
+- Add NAT for private ↔ public translation
+- Dynamic routing (RIP/OSPF) alongside static LPM
+- Structured logging & packet visualization
+- Integrate PCAP playback/tests; automated LPM unit tests
