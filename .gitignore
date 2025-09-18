@@ -1,4 +1,4 @@
-# Binaries and object files
+
 *.o
 *.out
 *.so
@@ -6,21 +6,20 @@
 *.dylib
 *.exe
 
-# Compiled router binary (if any)
+
 router
 
-# Logs and debug files
+
 *.log
 *.trace
 *.pcap
 
-# Editor/OS files
+
 .DS_Store
 *.swp
 *.swo
 *~
 
-# Build directories
 /build/
 /dist/
 /bin/
