@@ -13,19 +13,23 @@ A user-space software router implemented in C. It parses Ethernet frames, handle
 C (GCC), Linux networking, packet parsing, routing algorithms, debugging (tcpdump/Wireshark), build systems (Make).
 
 ## 📁 Project Layout
+```bash
 .
-├── Makefile
-├── rtable # example static routing table
-├── sr_router.c/.h # core router logic, packet entry point
-├── sr_arpcache.c/.h # ARP cache & request queue
-├── sr_if.c/.h # interface utilities
-├── sr_rt.c/.h # routing table helpers
-├── sr_utils.c/.h # checksum, dump helpers
-├── sr_main.c # process setup / main loop
-├── sr_protocol.h # on-wire structs (Ethernet/IP/ARP/ICMP)
-├── sha1.c/.h, vnscommand.h
-└── docs/
-└── IMPLEMENTATION.md # full design notes & decisions
+├── Makefile               # build instructions
+├── README.md              # project overview
+├── rtable                 # example static routing table
+├── sha1.c / sha1.h        # SHA1 utilities
+├── sr_arpcache.c / .h     # ARP cache & request queue
+├── sr_dumper.c / .h       # packet dumping utilities
+├── sr_if.c / .h           # router interface utilities
+├── sr_main.c              # router entry point (main loop)
+├── sr_protocol.h          # on-wire protocol definitions (Ethernet/IP/ARP/ICMP)
+├── sr_router.c / .h       # core router logic, packet processing
+├── sr_rt.c / .h           # routing table helpers
+├── sr_utils.c / .h        # checksum, printing, misc utils
+├── sr_vns_comm.c          # virtual network server comms
+└── vnscommand.h           # VNS command definitions
+```
 
 --- 
 
@@ -66,7 +70,7 @@ $ traceroute <remote-host>
 - ARP retries: arpcache_sweepreqs() + handle_arpreq() manage timeouts and eventual host-unreachable ICMP.
 - ICMP helpers: icmp_echo_reply(...) and send_icmp_error(type, code, ...) centralize construction & checksums.
 
-For the full deep-dive (files modified, helpers, debugging notes, design decisions), see docs/IMPLEMENTATION.md
+For the full deep-dive (files modified, helpers, debugging notes, design decisions), see [docs/IMPLEMENTATION.md](https://github.com/ldicker6/router/blob/main/IMPLEMENTATION.md)
 
 ---
 
