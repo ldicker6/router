@@ -1,18 +1,18 @@
 # Software Router (C)
 
 A user-space software router implemented in C. It parses Ethernet frames, handles ARP, forwards IPv4 packets with longest-prefix match, and generates required ICMP messages (echo reply, time exceeded, destination/port unreachable). Built as part of a computer networks course, presented here as a standalone, runnable project.
-
-## ✨ Features
+---
+## Features
 - **Ethernet → ARP/IP demux** with header parsing/validation
 - **ARP cache & request queue** (timeouts, retries; queue drain on reply)
 - **IPv4 forwarding** with **longest-prefix match (LPM)** and TTL/checksum updates
 - **ICMP**: echo reply, time exceeded (TTL=0), dest net/host unreachable, port unreachable
 - **Robust error handling** and packet utilities
-
-## 🔧 Tech & Skills
+---
+## Tech & Skills
 C (GCC), Linux networking, packet parsing, routing algorithms, debugging (tcpdump/Wireshark), build systems (Make).
-
-## 📁 Project Layout
+---
+## Project Layout
 ```bash
 .
 ├── Makefile               # build instructions
